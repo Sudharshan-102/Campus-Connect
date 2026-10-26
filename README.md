@@ -96,7 +96,7 @@ In the demo video, show:
 3. The output/result for each query.
 4. The application reflecting the result, where applicable.
 
-Use your actual query output. Do not include sample output as if it came from a successful run.
+Youtube Link: https://youtu.be/vuMtjHctJPM
 
 ## Conclusion
 
