@@ -1,0 +1,240 @@
+CRUD QUERIES — CAMPUS CONNECT
+
+
+============================================================
+1. STUDENTS — table: student
+============================================================
+
+CREATE (Create a student)
+-------------------------
+LET $s = (CREATE ONLY type::record('student', $key) CONTENT {
+    name: $name,
+    email: string::lowercase($email),
+    department: $department,
+    year: $year,
+    skills: $skills,
+    interests: $interests,
+    bio: $bio,
+    avatar: $avatar
+});
+RETURN $s;
+
+Example parameters:
+$key = 'akilan'
+$name = 'Akilan'
+$email = 'akilan@example.com'
+$department = 'CSE'
+$year = 2
+$skills = ['Java', 'C']
+$interests = ['DSA', 'Web Development']
+$bio = ''
+$avatar = ''
+
+READ (List students)
+--------------------
+SELECT id, name, email, department, year, skills, interests, bio, avatar, created_at
+FROM student
+ORDER BY name;
+
+READ (Get one student)
+----------------------
+SELECT * FROM ONLY type::record('student', $id);
+
+READ (Search/filter students)
+-----------------------------
+SELECT id, name, email, department, year, skills, interests, bio, avatar
+FROM student
+WHERE department = $department AND year = $year
+ORDER BY name;
+
+UPDATE (Change selected student fields)
+---------------------------------------
+UPDATE ONLY type::record('student', $id)
+MERGE {
+    name: $name,
+    department: $department,
+    year: $year
+};
+
+DELETE (Delete one student)
+---------------------------
+-- The application code removes connected relationship records first.
+LET $id = type::record('student', $studentId);
+DELETE friends_with WHERE in = $id OR out = $id;
+DELETE mentorship_request WHERE in = $id OR out = $id;
+DELETE mentors WHERE in = $id OR out = $id;
+DELETE collaborates_with WHERE in = $id OR out = $id;
+DELETE involves WHERE out = $id;
+DELETE $id;
+
+.
+
+============================================================
+2. FRIENDSHIPS — table: friends_with
+============================================================
+
+CREATE (Create friendship)
+--------------------------
+-- Store the two student record IDs in canonical order, as the app does.
+RELATE ONLY ($studentA)->friends_with->($studentB)
+SET level = $level;
+
+Allowed level values: 'friend', 'close'
+
+READ (List all friendships)
+---------------------------
+SELECT id, level, created_at
+FROM friends_with
+ORDER BY created_at DESC;
+
+READ (Friendships involving one student)
+----------------------------------------
+SELECT id, level, created_at
+FROM friends_with
+WHERE in = type::record('student', $studentId)
+   OR out = type::record('student', $studentId)
+ORDER BY created_at DESC;
+
+UPDATE (Change friendship level)
+--------------------------------
+UPDATE ONLY type::record('friends_with', $friendshipId)
+SET level = $level;
+
+Allowed level values: 'friend', 'close'
+
+DELETE (Remove friendship)
+--------------------------
+DELETE type::record('friends_with', $friendshipId);
+
+
+
+============================================================
+3. MENTORSHIP REQUESTS — table: mentorship_request
+============================================================
+
+CREATE (Send a mentorship request)
+----------------------------------
+RELATE ONLY ($menteeId)->mentorship_request->($mentorId)
+SET expertise = $expertise,
+    message = $message,
+    status = 'pending';
+
+READ (List requests)
+--------------------
+SELECT id, status, expertise, message, created_at, responded_at
+FROM mentorship_request
+ORDER BY created_at DESC;
+
+READ (Requests for a particular mentee)
+---------------------------------------
+SELECT id, status, expertise, message, created_at, responded_at
+FROM mentorship_request
+WHERE in = type::record('student', $menteeId);
+
+READ (Requests for a particular mentor)
+---------------------------------------
+SELECT id, status, expertise, message, created_at, responded_at
+FROM mentorship_request
+WHERE out = type::record('student', $mentorId);
+
+UPDATE (Accept a request)
+-------------------------
+-- The application accepts the request and creates the active mentorship
+-- in one transaction. Use acceptRequest() rather than running this alone.
+UPDATE ONLY type::record('mentorship_request', $requestId)
+SET status = 'accepted',
+    responded_at = time::now();
+
+UPDATE (Reject a request)
+-------------------------
+UPDATE ONLY type::record('mentorship_request', $requestId)
+SET status = 'rejected',
+    responded_at = time::now();
+
+DELETE / CANCEL (Withdraw a pending request)
+--------------------------------------------
+-- The app permits the requesting mentee to cancel only a pending request.
+DELETE type::record('mentorship_request', $requestId);
+
+
+
+============================================================
+4. ACTIVE / ENDED MENTORSHIPS — table: mentors
+============================================================
+
+CREATE (Create mentorship edge)
+-------------------------------
+RELATE ONLY ($mentorId)->mentors->($menteeId)
+SET expertise = $expertise,
+    status = 'active',
+    started_at = time::now();
+
+READ (List mentorships)
+-----------------------
+SELECT id, expertise, status, started_at, ended_at
+FROM mentors
+ORDER BY started_at DESC;
+
+READ (Mentorships involving one student)
+----------------------------------------
+SELECT id, expertise, status, started_at, ended_at
+FROM mentors
+WHERE in = type::record('student', $studentId)
+   OR out = type::record('student', $studentId)
+ORDER BY started_at DESC;
+
+UPDATE (End a mentorship)
+-------------------------
+UPDATE ONLY type::record('mentors', $mentorshipId)
+SET status = 'ended',
+    ended_at = time::now();
+
+DELETE (Delete an ended mentorship record)
+-------------------------------------------
+-- The application forbids deleting an active mentorship.
+DELETE type::record('mentors', $mentorshipId);
+
+
+
+============================================================
+5. COLLABORATIONS — table: collaborates_with
+============================================================
+
+CREATE (Create collaboration)
+-----------------------------
+RELATE ONLY ($studentA)->collaborates_with->($studentB)
+SET project_title = $projectTitle,
+    type = $type,
+    status = 'active';
+
+Allowed type values: 'project', 'research', 'hackathon', 'study_group'
+Allowed status values: 'active', 'completed', 'ended'
+
+READ (List collaborations)
+--------------------------
+SELECT id, project_title, type, status, created_at, ended_at
+FROM collaborates_with
+ORDER BY created_at DESC;
+
+READ (Collaborations involving one student)
+-------------------------------------------
+SELECT id, project_title, type, status, created_at, ended_at
+FROM collaborates_with
+WHERE in = type::record('student', $studentId)
+   OR out = type::record('student', $studentId)
+ORDER BY created_at DESC;
+
+UPDATE (Change collaboration details/status)
+---------------------------------------------
+UPDATE ONLY type::record('collaborates_with', $collaborationId)
+MERGE {
+    project_title: $projectTitle,
+    type: $type,
+    status: $status
+};
+
+DELETE (Remove collaboration)
+-----------------------------
+DELETE type::record('collaborates_with', $collaborationId);
+
+
